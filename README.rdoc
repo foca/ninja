@@ -1,0 +1,32 @@
+= Ninja!
+
+He runs in the background, without being seen
+
+== Install
+
+    gem install ninja
+
+== Use
+
+    require "ninja/threaded"
+
+    # Use a thread pool to run the background jobs
+    Ninja.hide_in(Ninja::Threaded.new(4))
+
+    class FooBar
+      include Ninja
+
+      def my_method
+        # some code
+        in_background do
+          # this code will run in background
+        end
+        # mode code
+      end
+    end
+
+== Credits
+
+Author:: Nicolás Sanguinetti (foca[http://github.com/foca])
+Contributors:: James Tucker (raggi[http://github.com/raggi])
+License:: MIT (see LICENSE file)
