@@ -1,13 +1,15 @@
 require File.expand_path(File.dirname(__FILE__) + "/../ninja")
 require "thread"
+require "logger"
 
 module Ninja
   # A thread pool based build engine. This engine simply adds jobs to an
   # in-memory queue, and processes them as soon as possible.
   class Threaded
     # The optional pool size controls how many threads will be created.
-    def initialize(pool_size = 2)
-      @pool = ThreadPool.new(pool_size)
+    def initialize(pool_size = 2, logger = Logger.new(STDOUT))
+      @pool   = ThreadPool.new(pool_size, logger)
+      @logger = logger
     end
 
     # Adds a job to the queue.
@@ -25,12 +27,11 @@ module Ninja
       Thread.pass until @pool.njobs == 0
     end
 
-    # Manage a pool of threads, allowing for spin up / spin down of the 
+    # Manage a pool of threads, allowing for spin up / spin down of the
     # contained threads.
     # Simply processes work added to it's queue via #push.
     # The default size for the pool is 2 threads.
     class ThreadPool
-
       # A thread safe single value for use as a counter.
       class Incrementor
         # The value passed in will be the initial value.
@@ -38,24 +39,29 @@ module Ninja
           @m = Mutex.new
           @v = v
         end
+
         # Add the given value to self, default 1.
         def inc(v = 1)
           sync { @v += v }
         end
+
         # Subtract the given value to self, default 1.
         def dec(v = 1)
           sync { @v -= v }
         end
+
         # Simply shows the value inspect for convenience.
         def inspect
           @v.inspect
         end
+
         # Extract the value.
         def to_i
           @v
         end
 
         private
+
         # Wrap the given block in a mutex.
         def sync(&b)
           @m.synchronize &b
@@ -64,6 +70,7 @@ module Ninja
 
       # The number of threads in the pool.
       attr_reader :size
+
       # The job queue.
       attr_reader :jobs
 
@@ -85,11 +92,12 @@ module Ninja
       end
 
       # Default pool size is 2 threads.
-      def initialize(size = nil)
+      def initialize(size = nil, logger = Logger.new(STDOUT))
         size ||= 2
         @jobs    = Queue.new
         @njobs   = Incrementor.new
         @workers = Array.new(size) { spawn }
+        @logger  = logger
       end
 
       # Adds a job to the queue, the job can be any number of objects
@@ -106,14 +114,15 @@ module Ninja
       alias_method :push, :add
       alias_method :<<,   :add
 
-      # A peak at the number of jobs in the queue. N.B. May differ, but 
+      # A peak at the number of jobs in the queue. N.B. May differ, but
       # should be more accurate than +jobs.size+.
       def njobs
         @njobs.to_i
       end
 
       private
-      # Create a new thread and return it. The thread will run until the 
+
+      # Create a new thread and return it. The thread will run until the
       # thread-local value +:run+ is changed to false or nil.
       def spawn
         Thread.new do
@@ -121,11 +130,17 @@ module Ninja
           c[:run] = true
 
           while c[:run]
-            @jobs.pop.call
+            job = @jobs.pop
+            begin
+              job.call
+            rescue Exception => e
+              @logger.error("Exception occured during build: #{e.message}")
+            end
             @njobs.dec
           end
         end
       end
     end
   end
+
 end
